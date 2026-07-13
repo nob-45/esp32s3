@@ -1,0 +1,21 @@
+# main 组件 CMakeLists
+idf_component_register(
+    SRCS
+        "main.c"
+        "lcd/lcd_st7789.c"
+        "lcd/lcd_font.c"
+        "sensor/water_sensor.c"
+    INCLUDE_DIRS
+        "."
+        "lcd"
+        "sensor"
+    REQUIRES
+        driver
+        esp_driver_gpio
+        esp_driver_spi
+        esp_driver_ledc
+        esp_adc
+        esp_timer
+        freertos
+        log
+)
