@@ -14,6 +14,7 @@
 
 #include "lcd_st7789.h"
 #include "water_sensor.h"
+#include "radar_ld2410.h"
 
 static const char *TAG = "main";
 
@@ -29,6 +30,7 @@ static const char *TAG = "main";
 #define UI_OK           0x2FE4  // DRY   绿
 #define UI_WARN         0xFD20  // DAMP  橙
 #define UI_ALARM        0xF9E7  // FLOOD 红
+#define UI_IDLE         0x7BEF  // EMPTY 灰
 
 /* 布局 */
 #define TITLE_H     40
@@ -85,7 +87,6 @@ static void ui_draw_static(void)
 
     lcd_fill_rect(0, 0, LCD_WIDTH, TITLE_H, UI_TITLE_BG);
     lcd_draw_string_2x(10, 4, "SmartCare", UI_TITLE_FG, UI_TITLE_BG);
-    lcd_draw_string(178, 20, "v0.5", UI_ACCENT, UI_TITLE_BG);
     lcd_fill_rect(0, TITLE_H, LCD_WIDTH, 2, UI_ACCENT);
 
     lcd_draw_string(8, PCT_Y + 12, "WATER LEVEL", UI_LABEL, UI_BG);
@@ -173,6 +174,39 @@ static void ui_update_footer(uint32_t sec)
     lcd_draw_string(x, FOOT_Y + 6, buf, UI_ACCENT, UI_TITLE_BG);
 }
 
+/* 标题栏右侧的雷达存在指示器: 大号 P:YES / P:NO, 颜色随状态切换
+ * YES=绿(有人)  NO=灰(无人)
+ */
+static void ui_update_radar_badge(const radar_data_t *r)
+{
+    const char *txt = r->presence ? "P:YES" : "P:NO ";
+    uint16_t fg = r->presence ? UI_OK : UI_IDLE;
+
+    /* 用 2x 字体, 一个字符 16px, 5 字符 = 80px */
+    uint16_t badge_w = 5 * 16;
+    uint16_t x = LCD_WIDTH - badge_w - 6;
+    uint16_t y = 4;
+    lcd_fill_rect(x, y, badge_w, 32, UI_TITLE_BG);
+    lcd_draw_string_2x(x, y, txt, fg, UI_TITLE_BG);
+}
+
+/* 底栏左侧文字随雷达状态动态更新, 显示"占用/空闲 + 持续时长" */
+static void ui_update_footer_left(const radar_data_t *r)
+{
+    char buf[32];
+    uint32_t sec = r->stable_ms / 1000;
+    if (r->presence) {
+        snprintf(buf, sizeof(buf), "OCCUPIED %02lum%02lus",
+                 (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+    } else {
+        snprintf(buf, sizeof(buf), "EMPTY    %02lum%02lus",
+                 (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+    }
+    lcd_fill_rect(6, FOOT_Y + 6, 22 * 8, 16, UI_TITLE_BG);
+    uint16_t col = r->presence ? UI_OK : UI_IDLE;
+    lcd_draw_string(8, FOOT_Y + 6, buf, col, UI_TITLE_BG);
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "===== SmartElderCare boot =====");
@@ -187,15 +221,20 @@ void app_main(void)
     lcd_draw_string(28, STATUS_Y + 56, "Keep sensor DRY please...", COLOR_WHITE, UI_CARD_BG);
 
     water_sensor_init();
+    radar_init();
 
-    water_data_t data = {0};
-    water_state_t last_state = (water_state_t)0xFF;
-    uint8_t last_pct = 255;
-    uint32_t last_sec = 0xFFFFFFFF;
-    int64_t t0 = esp_timer_get_time();
+    water_data_t   data  = {0};
+    radar_data_t   radar = {0};
+    water_state_t last_state    = (water_state_t)0xFF;
+    uint8_t       last_pct      = 255;
+    uint32_t      last_sec      = 0xFFFFFFFF;
+    bool          last_presence = false;
+    bool          badge_inited  = false;
+    int64_t       t0 = esp_timer_get_time();
 
     while (1) {
         water_sensor_read(&data);
+        radar_read(&radar);
 
         if (data.state != last_state) {
             ui_update_status(data.state);
@@ -209,16 +248,28 @@ void app_main(void)
 
         ui_update_info(&data);
 
+        /* 雷达存在指示器: 状态切换时或首次绘制时刷新 */
+        if (!badge_inited || radar.presence != last_presence) {
+            ui_update_radar_badge(&radar);
+            last_presence = radar.presence;
+            badge_inited  = true;
+        }
+
+        /* 底栏动态显示雷达状态 + 稳态时长, 每秒刷新 */
         uint32_t sec = (uint32_t)((esp_timer_get_time() - t0) / 1000000ULL);
         if (sec != last_sec) {
             ui_update_footer(sec);
+            ui_update_footer_left(&radar);
             last_sec = sec;
         }
 
-        ESP_LOGI(TAG, "adc=%d base=%d delta=%d pct=%d%% d0=%d state=%s",
+        ESP_LOGI(TAG, "adc=%d base=%d delta=%d pct=%d%% water=%s | radar=%s(%lums) raw=%d",
                  data.raw_adc, data.baseline, data.delta, data.percent,
-                 data.d0_alert, water_state_str(data.state));
+                 water_state_str(data.state),
+                 radar_state_str(radar.presence),
+                 (unsigned long)radar.stable_ms,
+                 radar.raw_level ? 1 : 0);
 
-        vTaskDelay(pdMS_TO_TICKS(300));
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }

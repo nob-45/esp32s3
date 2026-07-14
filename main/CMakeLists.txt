@@ -5,6 +5,7 @@ idf_component_register(
         "lcd/lcd_st7789.c"
         "lcd/lcd_font.c"
         "sensor/water_sensor.c"
+        "sensor/radar_ld2410.c"
     INCLUDE_DIRS
         "."
         "lcd"

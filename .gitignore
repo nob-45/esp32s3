@@ -28,3 +28,5 @@ __pycache__/
 
 # 日志
 *.log
+build_log.txt
+ninja_err.txt
