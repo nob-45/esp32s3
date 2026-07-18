@@ -1,0 +1,5 @@
+## SmartElderCare main 组件的外部依赖
+## 通过 ESP-IDF Component Manager 自动拉取 esp32-camera 官方组件
+dependencies:
+  espressif/esp32-camera: "~2.0.15"
+  idf: ">=5.0"

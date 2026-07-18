@@ -4,14 +4,25 @@ idf_component_register(
         "main.c"
         "lcd/lcd_st7789.c"
         "lcd/lcd_font.c"
+        "lcd/lcd_font_cn.c"
         "sensor/water_sensor.c"
         "sensor/radar_ld2410.c"
+        "sensor/air_mq135.c"
+        "sensor/adc1_bus.c"
+        "APP/uart_probe.c"
+        "camera/camera_ov2640.c"
+        "camera/camera_diag.c"
+        "net/wifi_mjpeg.c"
     INCLUDE_DIRS
         "."
         "lcd"
         "sensor"
+        "APP"
+        "camera"
+        "net"
     REQUIRES
         driver
+        esp_driver_i2c
         esp_driver_gpio
         esp_driver_spi
         esp_driver_ledc
@@ -19,4 +30,10 @@ idf_component_register(
         esp_timer
         freertos
         log
+        nvs_flash
+        esp_wifi
+        esp_event
+        esp_netif
+        esp_http_server
+        espressif__esp32-camera
 )

@@ -15,6 +15,7 @@ static bool     s_stable_presence = false;   // 已确认的稳态
 static bool     s_candidate       = false;   // 候选新状态
 static int64_t  s_candidate_since = 0;       // 候选状态起始时间(us)
 static int64_t  s_stable_since    = 0;       // 稳态起始时间(us)
+static int64_t  s_last_beat_us    = 0;       // 心跳日志上次打印时间
 
 /* GPIO 通路自检: 分别用内部上拉/下拉观察电平
  *   - 若开上拉读到 HIGH, 开下拉读到 LOW  => 引脚悬空(雷达 OUT 未接入或雷达没供电)
@@ -110,6 +111,15 @@ void radar_read(radar_data_t *d)
 
     d->presence  = s_stable_presence;
     d->stable_ms = (uint32_t)((now - s_stable_since) / 1000);
+
+    /* 心跳: 每 3 秒无条件打印一次原始电平, 用于确认驱动在跑 */
+    if ((now - s_last_beat_us) >= 3000000LL) {
+        s_last_beat_us = now;
+        ESP_LOGI(TAG, "beat: raw=%d presence=%d idle=%lus",
+                 level ? 1 : 0,
+                 s_stable_presence ? 1 : 0,
+                 (unsigned long)(d->stable_ms / 1000));
+    }
 }
 
 const char *radar_state_str(bool presence)

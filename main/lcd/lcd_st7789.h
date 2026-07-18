@@ -82,6 +82,32 @@ void lcd_draw_string_2x(uint16_t x, uint16_t y, const char *str, uint16_t fg, ui
 /* 计算 16x32 字符串宽度 (像素) */
 uint16_t lcd_measure_string_2x(const char *str);
 
+/* ==================== 中文 16x16 显示 (UTF-8 输入) ==================== */
+/* 显示一个 16x16 中文字符 (传入 UTF-8 3 字节) */
+void lcd_draw_char_cn(uint16_t x, uint16_t y, const uint8_t *utf8_3bytes,
+                      uint16_t fg, uint16_t bg);
+
+/* 显示 UTF-8 混排字符串:
+ *   - ASCII 用 8x16
+ *   - 中文 用 16x16
+ * 未收录的字会显示 '?' 方块。
+ */
+void lcd_draw_utf8(uint16_t x, uint16_t y, const char *utf8_str,
+                   uint16_t fg, uint16_t bg);
+
+/* 2x 放大 UTF-8 混排显示:
+ *   - ASCII 变为 16x32
+ *   - 中文 变为 32x32
+ */
+void lcd_draw_utf8_2x(uint16_t x, uint16_t y, const char *utf8_str,
+                      uint16_t fg, uint16_t bg);
+
+/* 测量 UTF-8 字符串的像素宽度 (1x) */
+uint16_t lcd_measure_utf8(const char *utf8_str);
+
+/* 测量 UTF-8 字符串的像素宽度 (2x) */
+uint16_t lcd_measure_utf8_2x(const char *utf8_str);
+
 /* 画水平进度条 (含外边框)
  *   x,y,w,h   : 外接矩形
  *   percent   : 0~100 填充百分比

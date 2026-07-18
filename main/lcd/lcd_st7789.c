@@ -377,6 +377,178 @@ uint16_t lcd_measure_string_2x(const char *str)
     return n * 16;
 }
 
+/* ==================== 中文 16x16 渲染 ==================== */
+#include "lcd_font_cn.h"
+
+/* 未收录字符的占位方块 (16x16 全空心方框) */
+static const uint8_t s_cn_missing[32] = {
+    0xFF, 0xFF, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01,
+    0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01,
+    0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01,
+    0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0xFF, 0xFF,
+};
+
+void lcd_draw_char_cn(uint16_t x, uint16_t y, const uint8_t *utf8_3bytes,
+                      uint16_t fg, uint16_t bg)
+{
+    const uint8_t *bmp = lcd_font_cn_lookup(utf8_3bytes[0], utf8_3bytes[1], utf8_3bytes[2]);
+    if (bmp == NULL) bmp = s_cn_missing;
+
+    /* 16x16 = 256 像素 * 2 = 512 字节 */
+    static uint8_t buf[16 * 16 * 2];
+    uint8_t fg_h = fg >> 8, fg_l = fg & 0xFF;
+    uint8_t bg_h = bg >> 8, bg_l = bg & 0xFF;
+
+    int idx = 0;
+    for (int row = 0; row < 16; row++) {
+        uint8_t hi = bmp[row * 2];
+        uint8_t lo = bmp[row * 2 + 1];
+        uint16_t line = ((uint16_t)hi << 8) | lo;
+        for (int col = 0; col < 16; col++) {
+            if (line & (0x8000 >> col)) {
+                buf[idx++] = fg_h;
+                buf[idx++] = fg_l;
+            } else {
+                buf[idx++] = bg_h;
+                buf[idx++] = bg_l;
+            }
+        }
+    }
+    lcd_set_window(x, y, x + 15, y + 15);
+    lcd_write_data(buf, sizeof(buf));
+}
+
+/* 2x 放大的中文字符: 32x32 */
+static void lcd_draw_char_cn_2x(uint16_t x, uint16_t y, const uint8_t *utf8_3bytes,
+                                uint16_t fg, uint16_t bg)
+{
+    const uint8_t *bmp = lcd_font_cn_lookup(utf8_3bytes[0], utf8_3bytes[1], utf8_3bytes[2]);
+    if (bmp == NULL) bmp = s_cn_missing;
+
+    /* 32x32 = 1024 像素 * 2 = 2048 字节 */
+    static uint8_t buf[32 * 32 * 2];
+    uint8_t fg_h = fg >> 8, fg_l = fg & 0xFF;
+    uint8_t bg_h = bg >> 8, bg_l = bg & 0xFF;
+
+    int idx = 0;
+    for (int row = 0; row < 16; row++) {
+        uint16_t line = ((uint16_t)bmp[row * 2] << 8) | bmp[row * 2 + 1];
+        for (int dup = 0; dup < 2; dup++) {
+            for (int col = 0; col < 16; col++) {
+                uint8_t on = (line & (0x8000 >> col)) ? 1 : 0;
+                for (int d2 = 0; d2 < 2; d2++) {
+                    if (on) {
+                        buf[idx++] = fg_h;
+                        buf[idx++] = fg_l;
+                    } else {
+                        buf[idx++] = bg_h;
+                        buf[idx++] = bg_l;
+                    }
+                }
+            }
+        }
+    }
+    lcd_set_window(x, y, x + 31, y + 31);
+    lcd_write_data(buf, sizeof(buf));
+}
+
+/* UTF-8 解析: 返回本字符字节数 (1/2/3/4), 通过 out 输出前3字节 (中文场景) */
+static int utf8_decode(const uint8_t *p, uint8_t out3[3])
+{
+    uint8_t c = p[0];
+    if (c == 0) return 0;
+    if ((c & 0x80) == 0) {          // ASCII 1字节
+        out3[0] = c; out3[1] = 0; out3[2] = 0;
+        return 1;
+    }
+    if ((c & 0xE0) == 0xC0) {       // 2字节
+        out3[0] = c; out3[1] = p[1]; out3[2] = 0;
+        return 2;
+    }
+    if ((c & 0xF0) == 0xE0) {       // 3字节 (常用汉字)
+        out3[0] = c; out3[1] = p[1]; out3[2] = p[2];
+        return 3;
+    }
+    if ((c & 0xF8) == 0xF0) {       // 4字节
+        out3[0] = c; out3[1] = p[1]; out3[2] = p[2];
+        return 4;
+    }
+    /* 非法字节, 跳过 1 字节 */
+    out3[0] = '?'; out3[1] = 0; out3[2] = 0;
+    return 1;
+}
+
+void lcd_draw_utf8(uint16_t x, uint16_t y, const char *utf8_str,
+                   uint16_t fg, uint16_t bg)
+{
+    const uint8_t *p = (const uint8_t *)utf8_str;
+    uint8_t buf[3];
+    while (*p) {
+        int n = utf8_decode(p, buf);
+        if (n == 1) {
+            if (x + 8 > LCD_WIDTH) break;
+            lcd_draw_char(x, y, (char)buf[0], fg, bg);
+            x += 8;
+        } else if (n == 3) {
+            if (x + 16 > LCD_WIDTH) break;
+            lcd_draw_char_cn(x, y, buf, fg, bg);
+            x += 16;
+        } else {
+            /* 2/4 字节非典型情况, 简单占位 */
+            if (x + 16 > LCD_WIDTH) break;
+            lcd_draw_char_cn(x, y, buf, fg, bg);
+            x += 16;
+        }
+        p += n;
+    }
+}
+
+void lcd_draw_utf8_2x(uint16_t x, uint16_t y, const char *utf8_str,
+                      uint16_t fg, uint16_t bg)
+{
+    const uint8_t *p = (const uint8_t *)utf8_str;
+    uint8_t buf[3];
+    while (*p) {
+        int n = utf8_decode(p, buf);
+        if (n == 1) {
+            if (x + 16 > LCD_WIDTH) break;
+            lcd_draw_char_2x(x, y, (char)buf[0], fg, bg);
+            x += 16;
+        } else {
+            if (x + 32 > LCD_WIDTH) break;
+            lcd_draw_char_cn_2x(x, y, buf, fg, bg);
+            x += 32;
+        }
+        p += n;
+    }
+}
+
+uint16_t lcd_measure_utf8(const char *utf8_str)
+{
+    const uint8_t *p = (const uint8_t *)utf8_str;
+    uint8_t buf[3];
+    uint16_t w = 0;
+    while (*p) {
+        int n = utf8_decode(p, buf);
+        w += (n == 1) ? 8 : 16;
+        p += n;
+    }
+    return w;
+}
+
+uint16_t lcd_measure_utf8_2x(const char *utf8_str)
+{
+    const uint8_t *p = (const uint8_t *)utf8_str;
+    uint8_t buf[3];
+    uint16_t w = 0;
+    while (*p) {
+        int n = utf8_decode(p, buf);
+        w += (n == 1) ? 16 : 32;
+        p += n;
+    }
+    return w;
+}
+
 /* ==================== 进度条 ==================== */
 void lcd_draw_progress(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                        uint8_t percent, uint16_t fg, uint16_t bg, uint16_t border)

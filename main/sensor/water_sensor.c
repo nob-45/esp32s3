@@ -9,6 +9,7 @@
  *   5) percent 基于相对基线的增量映射, 更贴合"多少水"直觉
  */
 #include "water_sensor.h"
+#include "adc1_bus.h"
 
 #include "driver/gpio.h"
 #include "esp_adc/adc_oneshot.h"
@@ -127,12 +128,12 @@ void water_sensor_init(void)
     };
     gpio_config(&io);
 
-    /* --- A0 模拟引脚: ADC1 oneshot --- */
-    adc_oneshot_unit_init_cfg_t unit_cfg = {
-        .unit_id  = WATER_ADC_UNIT,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&unit_cfg, &s_adc_handle));
+    /* --- A0 模拟引脚: 使用共享 ADC1 handle --- */
+    s_adc_handle = adc1_bus_get();
+    if (s_adc_handle == NULL) {
+        ESP_LOGE(TAG, "failed to get shared ADC1 handle");
+        return;
+    }
 
     adc_oneshot_chan_cfg_t chan_cfg = {
         .atten    = WATER_ADC_ATTEN,
